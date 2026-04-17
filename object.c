@@ -55,6 +55,12 @@ void object_path(const ObjectID *id, char *path_out, size_t path_size) {
     snprintf(path_out, path_size, "%s/%.2s/%s", OBJECTS_DIR, hex, hex + 2);
 }
 
+static void object_shard_path(const ObjectID *id, char *path_out, size_t path_size) {
+    char hex[HASH_HEX_SIZE + 1];
+    hash_to_hex(id, hex);
+    snprintf(path_out, path_size, "%s/%.2s", OBJECTS_DIR, hex);
+}
+
 int object_exists(const ObjectID *id) {
     char path[512];
     object_path(id, path, sizeof(path));
@@ -179,13 +185,11 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
     }
 
     char final_path[512];
-    char hex[HASH_HEX_SIZE + 1];
     char shard_dir[512];
     char temp_template[600];
 
     object_path(id_out, final_path, sizeof(final_path));
-    hash_to_hex(id_out, hex);
-    snprintf(shard_dir, sizeof(shard_dir), "%s/%.2s", OBJECTS_DIR, hex);
+    object_shard_path(id_out, shard_dir, sizeof(shard_dir));
 
     if (mkdir(shard_dir, 0755) < 0 && errno != EEXIST) {
         free(object);
