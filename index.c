@@ -156,6 +156,13 @@ static int parse_index_line(const char *line, IndexEntry *entry) {
     return 0;
 }
 
+static void cleanup_index_tmp(FILE *f, int fd, const char *tmp_path, IndexEntry *sorted_entries) {
+    if (f) fclose(f);
+    else if (fd >= 0) close(fd);
+    if (tmp_path) unlink(tmp_path);
+    free(sorted_entries);
+}
+
 // Load the index from .pes/index.
 //
 // HINTS - Useful functions:
@@ -229,17 +236,20 @@ int index_save(const Index *index) {
     }
 
     char tmp_path[sizeof(INDEX_FILE) + 16];
-    if (snprintf(tmp_path, sizeof(tmp_path), "%s.XXXXXX", INDEX_FILE) >= (int)sizeof(tmp_path))
+    if (snprintf(tmp_path, sizeof(tmp_path), "%s.XXXXXX", INDEX_FILE) >= (int)sizeof(tmp_path)) {
+        free(sorted_entries);
         return -1;
+    }
 
     int fd = mkstemp(tmp_path);
-    if (fd < 0) return -1;
+    if (fd < 0) {
+        free(sorted_entries);
+        return -1;
+    }
 
     FILE *f = fdopen(fd, "w");
     if (!f) {
-        close(fd);
-        unlink(tmp_path);
-        free(sorted_entries);
+        cleanup_index_tmp(NULL, fd, tmp_path, sorted_entries);
         return -1;
     }
 
@@ -268,8 +278,7 @@ int index_save(const Index *index) {
     }
 
     if (rc != 0) {
-        unlink(tmp_path);
-        free(sorted_entries);
+        cleanup_index_tmp(NULL, -1, tmp_path, sorted_entries);
         return -1;
     }
 
