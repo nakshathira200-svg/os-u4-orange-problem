@@ -25,6 +25,10 @@
 
 int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out);
 
+static int is_valid_tree_name(const char *name) {
+    return name && name[0] != '\0' && strchr(name, '/') == NULL;
+}
+
 // ─── PROVIDED ───────────────────────────────────────────────────────────────
 
 // Determine the object mode for a filesystem path.
@@ -68,6 +72,7 @@ int tree_parse(const void *data, size_t len, Tree *tree_out) {
         if (name_len >= sizeof(entry->name)) return -1;
         memcpy(entry->name, ptr, name_len);
         entry->name[name_len] = '\0'; // Ensure null-terminated
+        if (!is_valid_tree_name(entry->name)) return -1;
 
         ptr = null_byte + 1; // Skip null byte
 
@@ -86,13 +91,27 @@ static int compare_tree_entries(const void *a, const void *b) {
     return strcmp(((const TreeEntry *)a)->name, ((const TreeEntry *)b)->name);
 }
 
+static size_t serialized_tree_size(const Tree *tree) {
+    size_t total = 0;
+
+    for (int i = 0; i < tree->count; i++) {
+        total += (size_t)snprintf(NULL, 0, "%o %s",
+                                  tree->entries[i].mode,
+                                  tree->entries[i].name);
+        total += 1 + HASH_SIZE;
+    }
+
+    return total;
+}
+
 // Serialize a Tree struct into binary format for storage.
 // Caller must free(*data_out).
 // Returns 0 on success, -1 on error.
 int tree_serialize(const Tree *tree, void **data_out, size_t *len_out) {
-    // Estimate max size: (6 bytes mode + 1 byte space + 256 bytes name + 1 byte null + 32 bytes hash) per entry
-    size_t max_size = tree->count * 296; 
-    uint8_t *buffer = malloc(max_size);
+    if (!tree || !data_out || !len_out) return -1;
+
+    size_t max_size = serialized_tree_size(tree);
+    uint8_t *buffer = malloc(max_size ? max_size : 1);
     if (!buffer) return -1;
 
     // Create a mutable copy to sort entries (Git requirement)
@@ -153,7 +172,9 @@ static int load_index_for_tree(Index *index) {
 }
 
 static int add_tree_entry(Tree *tree, uint32_t mode, const ObjectID *hash, const char *name) {
-    if (tree->count >= MAX_TREE_ENTRIES || strlen(name) >= sizeof(tree->entries[0].name))
+    if (tree->count >= MAX_TREE_ENTRIES ||
+        !is_valid_tree_name(name) ||
+        strlen(name) >= sizeof(tree->entries[0].name))
         return -1;
 
     TreeEntry *entry = &tree->entries[tree->count++];
@@ -161,6 +182,23 @@ static int add_tree_entry(Tree *tree, uint32_t mode, const ObjectID *hash, const
     entry->hash = *hash;
     strcpy(entry->name, name);
     return 0;
+}
+
+static int subtree_entry_count(const IndexEntry *entries, int count,
+                               const char *prefix, const char *dir_name, size_t dir_len) {
+    size_t prefix_len = strlen(prefix);
+    int matched = 0;
+
+    while (matched < count) {
+        const char *path = entries[matched].path;
+        if (strncmp(path, prefix, prefix_len) != 0) break;
+
+        const char *rest = path + prefix_len;
+        if (strncmp(rest, dir_name, dir_len) != 0 || rest[dir_len] != '/') break;
+        matched++;
+    }
+
+    return matched;
 }
 
 static int write_tree_level(const IndexEntry *entries, int count, const char *prefix, ObjectID *id_out) {
@@ -191,28 +229,20 @@ static int write_tree_level(const IndexEntry *entries, int count, const char *pr
         memcpy(dir_name, rest, dir_len);
         dir_name[dir_len] = '\0';
 
-        int j = i + 1;
-        while (j < count) {
-            const char *next_path = entries[j].path;
-            if (strncmp(next_path, prefix, prefix_len) != 0) break;
-
-            const char *next_rest = next_path + prefix_len;
-            if (strncmp(next_rest, dir_name, dir_len) != 0 || next_rest[dir_len] != '/')
-                break;
-            j++;
-        }
+        int child_count = subtree_entry_count(&entries[i], count - i, prefix, dir_name, dir_len);
+        if (child_count <= 0) return -1;
 
         if (snprintf(child_prefix, sizeof(child_prefix), "%s%s/", prefix, dir_name) >= (int)sizeof(child_prefix))
             return -1;
 
         ObjectID child_id;
-        if (write_tree_level(&entries[i], j - i, child_prefix, &child_id) != 0)
+        if (write_tree_level(&entries[i], child_count, child_prefix, &child_id) != 0)
             return -1;
 
         if (add_tree_entry(&tree, MODE_DIR, &child_id, dir_name) != 0)
             return -1;
 
-        i = j;
+        i += child_count;
     }
 
     if (tree.count == 0) {
