@@ -60,7 +60,9 @@ int tree_parse(const void *data, size_t len, Tree *tree_out) {
         size_t mode_len = space - ptr;
         if (mode_len >= sizeof(mode_str)) return -1;
         memcpy(mode_str, ptr, mode_len);
-        entry->mode = strtol(mode_str, NULL, 8);
+        char *mode_end = NULL;
+        entry->mode = strtoul(mode_str, &mode_end, 8);
+        if (!mode_end || *mode_end != '\0') return -1;
 
         ptr = space + 1; // Skip space
 
@@ -83,7 +85,7 @@ int tree_parse(const void *data, size_t len, Tree *tree_out) {
 
         tree_out->count++;
     }
-    return 0;
+    return ptr == end ? 0 : -1;
 }
 
 // Helper for qsort to ensure consistent tree hashing
