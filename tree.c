@@ -91,13 +91,27 @@ static int compare_tree_entries(const void *a, const void *b) {
     return strcmp(((const TreeEntry *)a)->name, ((const TreeEntry *)b)->name);
 }
 
+static size_t serialized_tree_size(const Tree *tree) {
+    size_t total = 0;
+
+    for (int i = 0; i < tree->count; i++) {
+        total += (size_t)snprintf(NULL, 0, "%o %s",
+                                  tree->entries[i].mode,
+                                  tree->entries[i].name);
+        total += 1 + HASH_SIZE;
+    }
+
+    return total;
+}
+
 // Serialize a Tree struct into binary format for storage.
 // Caller must free(*data_out).
 // Returns 0 on success, -1 on error.
 int tree_serialize(const Tree *tree, void **data_out, size_t *len_out) {
-    // Estimate max size: (6 bytes mode + 1 byte space + 256 bytes name + 1 byte null + 32 bytes hash) per entry
-    size_t max_size = tree->count * 296; 
-    uint8_t *buffer = malloc(max_size);
+    if (!tree || !data_out || !len_out) return -1;
+
+    size_t max_size = serialized_tree_size(tree);
+    uint8_t *buffer = malloc(max_size ? max_size : 1);
     if (!buffer) return -1;
 
     // Create a mutable copy to sort entries (Git requirement)
