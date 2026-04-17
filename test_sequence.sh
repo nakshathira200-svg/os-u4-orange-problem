@@ -35,7 +35,26 @@ echo "version 1" > file.txt
 echo "hello world" > hello.txt
 $PES add file.txt hello.txt
 echo "Status after add:"
-$PES status
+status_output=$($PES status)
+printf '%s\n' "$status_output"
+printf '%s\n' "$status_output" | grep -q "staged:     file.txt"
+printf '%s\n' "$status_output" | grep -q "staged:     hello.txt"
+echo ""
+
+# ── Working Tree Drift ─────────────────────────────────────────────────────
+echo "--- Working Tree Drift ---"
+echo "local edit" >> file.txt
+rm hello.txt
+echo "scratch" > scratch.txt
+drift_output=$($PES status)
+printf '%s\n' "$drift_output"
+printf '%s\n' "$drift_output" | grep -q "modified:   file.txt"
+printf '%s\n' "$drift_output" | grep -q "deleted:    hello.txt"
+printf '%s\n' "$drift_output" | grep -q "untracked:  scratch.txt"
+$PES add file.txt
+echo "hello world" > hello.txt
+$PES add hello.txt
+rm scratch.txt
 echo ""
 
 # ── First Commit ───────────────────────────────────────────────────────────
