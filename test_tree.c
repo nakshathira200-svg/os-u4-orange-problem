@@ -97,6 +97,27 @@ void test_tree_determinism(void) {
     printf("PASS: tree deterministic serialization\n");
 }
 
+void test_tree_parse_rejects_malformed_entries(void) {
+    uint8_t invalid_name[] = {
+        '1', '0', '0', '6', '4', '4', ' ', 'b', 'a', 'd', '/', 'n', 'a', 'm', 'e', '\0',
+        0
+    };
+    Tree parsed;
+    int rc = tree_parse(invalid_name, sizeof(invalid_name), &parsed);
+    assert(rc == -1);
+
+    uint8_t trailing_bytes[] = {
+        '1', '0', '0', '6', '4', '4', ' ', 'o', 'k', '\0',
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        'x'
+    };
+    rc = tree_parse(trailing_bytes, sizeof(trailing_bytes), &parsed);
+    assert(rc == -1);
+
+    printf("PASS: malformed tree parsing\n");
+}
+
 int main(void) {
     int rc __attribute__((unused));
     rc = system("rm -rf .pes");
@@ -104,6 +125,7 @@ int main(void) {
 
     test_tree_roundtrip();
     test_tree_determinism();
+    test_tree_parse_rejects_malformed_entries();
 
     printf("\nAll Phase 2 tests passed.\n");
     return 0;
