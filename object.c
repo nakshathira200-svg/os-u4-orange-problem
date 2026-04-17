@@ -17,6 +17,7 @@
 #include <unistd.h>
 #include <openssl/evp.h>
 #include <errno.h>
+#include <ctype.h>
 
 // ─── PROVIDED ────────────────────────────────────────────────────────────────
 
@@ -55,6 +56,17 @@ void object_path(const ObjectID *id, char *path_out, size_t path_size) {
     snprintf(path_out, path_size, "%s/%.2s/%s", OBJECTS_DIR, hex, hex + 2);
 }
 
+static void object_shard_path(const ObjectID *id, char *path_out, size_t path_size) {
+    char hex[HASH_HEX_SIZE + 1];
+    hash_to_hex(id, hex);
+    snprintf(path_out, path_size, "%s/%.2s", OBJECTS_DIR, hex);
+}
+
+static void cleanup_temp_file(int fd, const char *path) {
+    if (fd >= 0) close(fd);
+    if (path) unlink(path);
+}
+
 int object_exists(const ObjectID *id) {
     char path[512];
     object_path(id, path, sizeof(path));
@@ -90,6 +102,29 @@ static int parse_object_type(const char *type_str, ObjectType *type_out) {
     return -1;
 }
 
+static int parse_object_header(const char *header, ObjectType *type_out, size_t *len_out) {
+    if (!header || !type_out || !len_out) return -1;
+
+    const char *space = strchr(header, ' ');
+    if (!space || space == header) return -1;
+
+    char type_str[16];
+    size_t type_len = (size_t)(space - header);
+    if (type_len >= sizeof(type_str)) return -1;
+    memcpy(type_str, header, type_len);
+    type_str[type_len] = '\0';
+
+    const char *len_str = space + 1;
+    if (*len_str == '\0') return -1;
+    for (const char *p = len_str; *p != '\0'; p++) {
+        if (!isdigit((unsigned char)*p)) return -1;
+    }
+
+    if (parse_object_type(type_str, type_out) != 0) return -1;
+    *len_out = strtoull(len_str, NULL, 10);
+    return 0;
+}
+
 static int write_all(int fd, const void *buf, size_t len) {
     const unsigned char *p = buf;
     size_t written = 0;
@@ -103,6 +138,31 @@ static int write_all(int fd, const void *buf, size_t len) {
         written += (size_t)rc;
     }
 
+    return 0;
+}
+
+static int build_object_buffer(ObjectType type, const void *data, size_t len,
+                               unsigned char **object_out, size_t *total_len_out) {
+    const char *type_name = object_type_name(type);
+    if (!type_name || !object_out || !total_len_out) return -1;
+
+    int header_len = snprintf(NULL, 0, "%s %zu", type_name, len);
+    if (header_len < 0) return -1;
+
+    size_t total_len = (size_t)header_len + 1 + len;
+    unsigned char *object = malloc(total_len);
+    if (!object) return -1;
+
+    if (snprintf((char *)object, (size_t)header_len + 1, "%s %zu", type_name, len) != header_len) {
+        free(object);
+        return -1;
+    }
+
+    object[header_len] = '\0';
+    if (len > 0) memcpy(object + header_len + 1, data, len);
+
+    *object_out = object;
+    *total_len_out = total_len;
     return 0;
 }
 
@@ -142,19 +202,9 @@ static int write_all(int fd, const void *buf, size_t len) {
 int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out) {
     if ((!data && len > 0) || !id_out) return -1;
 
-    const char *type_name = object_type_name(type);
-    if (!type_name) return -1;
-
-    int header_len = snprintf(NULL, 0, "%s %zu", type_name, len);
-    if (header_len < 0) return -1;
-
-    size_t total_len = (size_t)header_len + 1 + len;
-    unsigned char *object = malloc(total_len);
-    if (!object) return -1;
-
-    snprintf((char *)object, (size_t)header_len + 1, "%s %zu", type_name, len);
-    object[header_len] = '\0';
-    if (len > 0) memcpy(object + header_len + 1, data, len);
+    unsigned char *object = NULL;
+    size_t total_len = 0;
+    if (build_object_buffer(type, data, len, &object, &total_len) != 0) return -1;
 
     compute_hash(object, total_len, id_out);
 
@@ -164,13 +214,11 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
     }
 
     char final_path[512];
-    char hex[HASH_HEX_SIZE + 1];
     char shard_dir[512];
     char temp_template[600];
 
     object_path(id_out, final_path, sizeof(final_path));
-    hash_to_hex(id_out, hex);
-    snprintf(shard_dir, sizeof(shard_dir), "%s/%.2s", OBJECTS_DIR, hex);
+    object_shard_path(id_out, shard_dir, sizeof(shard_dir));
 
     if (mkdir(shard_dir, 0755) < 0 && errno != EEXIST) {
         free(object);
@@ -185,20 +233,19 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
     }
 
     if (write_all(fd, object, total_len) < 0 || fsync(fd) < 0) {
-        close(fd);
-        unlink(temp_template);
+        cleanup_temp_file(fd, temp_template);
         free(object);
         return -1;
     }
 
     if (close(fd) < 0) {
-        unlink(temp_template);
+        cleanup_temp_file(-1, temp_template);
         free(object);
         return -1;
     }
 
     if (rename(temp_template, final_path) < 0) {
-        unlink(temp_template);
+        cleanup_temp_file(-1, temp_template);
         free(object);
         return -1;
     }
@@ -300,10 +347,8 @@ int object_read(const ObjectID *id, ObjectType *type_out, void **data_out, size_
     memcpy(header, object, header_len);
     header[header_len] = '\0';
 
-    char type_str[16];
     size_t declared_len;
-    if (sscanf(header, "%15s %zu", type_str, &declared_len) != 2 ||
-        parse_object_type(type_str, type_out) != 0) {
+    if (parse_object_header(header, type_out, &declared_len) != 0) {
         free(header);
         free(object);
         return -1;
@@ -329,8 +374,3 @@ int object_read(const ObjectID *id, ObjectType *type_out, void **data_out, size_
     *len_out = declared_len;
     return 0;
 }
-// Phase 1 Commit 1: Initialized object storage module
-// Phase 1 Commit 2: Added notes on hashing logic
-// Phase 1 Commit 3: Clarified object write flow
-// Phase 1 Commit 4: Clarified object read flow
-// Phase 1 Commit 5: Final cleanup and notes

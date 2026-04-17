@@ -30,6 +30,7 @@ void test_blob_storage(void) {
     char path[512];
     object_path(&id, path, sizeof(path));
     printf("Object stored at: %s\n", path);
+    assert(object_exists(&id));
 
     // Read it back and verify
     ObjectType type;
@@ -57,6 +58,24 @@ void test_deduplication(void) {
     printf("PASS: deduplication\n");
 }
 
+void test_empty_blob_storage(void) {
+    ObjectID id;
+    int rc = object_write(OBJ_BLOB, "", 0, &id);
+    assert(rc == 0);
+    assert(object_exists(&id));
+
+    ObjectType type;
+    void *data = NULL;
+    size_t len = 1234;
+    rc = object_read(&id, &type, &data, &len);
+    assert(rc == 0);
+    assert(type == OBJ_BLOB);
+    assert(len == 0);
+    free(data);
+
+    printf("PASS: empty blob storage\n");
+}
+
 void test_integrity(void) {
     const char *content = "Test integrity\n";
     ObjectID id;
@@ -82,6 +101,18 @@ void test_integrity(void) {
     printf("PASS: integrity check\n");
 }
 
+void test_missing_object(void) {
+    ObjectID id = {0};
+    ObjectType type;
+    void *data = NULL;
+    size_t len = 0;
+
+    int rc = object_read(&id, &type, &data, &len);
+    assert(rc == -1);
+
+    printf("PASS: missing object read\n");
+}
+
 int main(void) {
     // Clean slate
     int rc __attribute__((unused));
@@ -90,7 +121,9 @@ int main(void) {
 
     test_blob_storage();
     test_deduplication();
+    test_empty_blob_storage();
     test_integrity();
+    test_missing_object();
 
     printf("\nAll Phase 1 tests passed.\n");
     return 0;
