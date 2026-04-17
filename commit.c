@@ -71,9 +71,12 @@ int commit_parse(const void *data, size_t len, Commit *commit_out) {
     commit_out->timestamp = ts;
     p = next_commit_line(p);  // skip author line
     if (!p) return -1;
-    p = next_commit_line(p);  // skip committer line
-    if (!p) return -1;
-    p = next_commit_line(p);  // skip blank line
+
+    char committer_buf[256];
+    if (sscanf(p, "committer %255[^\n]\n", committer_buf) != 1) return -1;
+    p = next_commit_line(p);
+    if (!p || *p != '\n') return -1;
+    p = next_commit_line(p);
     if (!p) return -1;
 
     snprintf(commit_out->message, sizeof(commit_out->message), "%s", p);
