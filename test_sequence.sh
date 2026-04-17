@@ -62,7 +62,9 @@ echo "--- First Commit ---"
 $PES commit -m "Initial commit"
 echo ""
 echo "Log after first commit:"
-$PES log
+first_log=$($PES log)
+printf '%s\n' "$first_log"
+printf '%s\n' "$first_log" | grep -q "Initial commit"
 echo ""
 
 # ── Modify and Recommit ───────────────────────────────────────────────────
@@ -80,7 +82,11 @@ $PES commit -m "Add farewell"
 echo ""
 
 echo "--- Full History ---"
-$PES log
+full_log=$($PES log)
+printf '%s\n' "$full_log"
+printf '%s\n' "$full_log" | grep -q "Add farewell"
+printf '%s\n' "$full_log" | grep -q "Update file.txt"
+printf '%s\n' "$full_log" | grep -q "Initial commit"
 echo ""
 
 echo "--- Reference Chain ---"
@@ -88,6 +94,9 @@ echo "HEAD:"
 cat .pes/HEAD
 echo "refs/heads/main:"
 cat .pes/refs/heads/main
+grep -q '^ref: refs/heads/main$' .pes/HEAD
+head_ref=$(cat .pes/refs/heads/main)
+[ -n "$head_ref" ]
 echo ""
 
 echo "--- Object Store ---"
