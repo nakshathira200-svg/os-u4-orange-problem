@@ -17,6 +17,7 @@
 #include <unistd.h>
 #include <openssl/evp.h>
 #include <errno.h>
+#include <ctype.h>
 
 // ─── PROVIDED ────────────────────────────────────────────────────────────────
 
@@ -99,6 +100,29 @@ static int parse_object_type(const char *type_str, ObjectType *type_out) {
         return 0;
     }
     return -1;
+}
+
+static int parse_object_header(const char *header, ObjectType *type_out, size_t *len_out) {
+    if (!header || !type_out || !len_out) return -1;
+
+    const char *space = strchr(header, ' ');
+    if (!space || space == header) return -1;
+
+    char type_str[16];
+    size_t type_len = (size_t)(space - header);
+    if (type_len >= sizeof(type_str)) return -1;
+    memcpy(type_str, header, type_len);
+    type_str[type_len] = '\0';
+
+    const char *len_str = space + 1;
+    if (*len_str == '\0') return -1;
+    for (const char *p = len_str; *p != '\0'; p++) {
+        if (!isdigit((unsigned char)*p)) return -1;
+    }
+
+    if (parse_object_type(type_str, type_out) != 0) return -1;
+    *len_out = strtoull(len_str, NULL, 10);
+    return 0;
 }
 
 static int write_all(int fd, const void *buf, size_t len) {
@@ -323,10 +347,8 @@ int object_read(const ObjectID *id, ObjectType *type_out, void **data_out, size_
     memcpy(header, object, header_len);
     header[header_len] = '\0';
 
-    char type_str[16];
     size_t declared_len;
-    if (sscanf(header, "%15s %zu", type_str, &declared_len) != 2 ||
-        parse_object_type(type_str, type_out) != 0) {
+    if (parse_object_header(header, type_out, &declared_len) != 0) {
         free(header);
         free(object);
         return -1;
