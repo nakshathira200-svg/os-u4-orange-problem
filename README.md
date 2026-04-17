@@ -2,7 +2,7 @@
 
 ## Student Details
 
-* **Name:** Nakshathira B
+* **Name:** Nakshathira Bharathi
 * **SRN:** PESXUG24AM096
 
 ---
