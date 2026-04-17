@@ -163,6 +163,35 @@ static void cleanup_index_tmp(FILE *f, int fd, const char *tmp_path, IndexEntry 
     free(sorted_entries);
 }
 
+static int read_regular_file(const char *path, const struct stat *st, void **data_out) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return -1;
+
+    size_t len = (size_t)st->st_size;
+    void *data = NULL;
+    if (len > 0) {
+        data = malloc(len);
+        if (!data) {
+            fclose(f);
+            return -1;
+        }
+
+        if (fread(data, 1, len, f) != len) {
+            free(data);
+            fclose(f);
+            return -1;
+        }
+    }
+
+    if (fclose(f) != 0) {
+        free(data);
+        return -1;
+    }
+
+    *data_out = data;
+    return 0;
+}
+
 // Load the index from .pes/index.
 //
 // HINTS - Useful functions:
@@ -303,29 +332,9 @@ int index_add(Index *index, const char *path) {
     if (!S_ISREG(st.st_mode)) return -1;
     if ((uint64_t)st.st_size > UINT32_MAX) return -1;
 
-    FILE *f = fopen(path, "rb");
-    if (!f) return -1;
-
     size_t len = (size_t)st.st_size;
     void *data = NULL;
-    if (len > 0) {
-        data = malloc(len);
-        if (!data) {
-            fclose(f);
-            return -1;
-        }
-
-        if (fread(data, 1, len, f) != len) {
-            free(data);
-            fclose(f);
-            return -1;
-        }
-    }
-
-    if (fclose(f) != 0) {
-        free(data);
-        return -1;
-    }
+    if (read_regular_file(path, &st, &data) != 0) return -1;
 
     ObjectID hash;
     if (object_write(OBJ_BLOB, data, len, &hash) != 0) {
