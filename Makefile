@@ -2,6 +2,15 @@ CC = gcc
 CFLAGS = -Wall -Wextra -O2
 LDFLAGS = -lcrypto
 
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+OPENSSL_PREFIX := $(shell if test -d /opt/homebrew/opt/openssl@3; then echo /opt/homebrew/opt/openssl@3; elif test -d /usr/local/opt/openssl@3; then echo /usr/local/opt/openssl@3; fi)
+ifneq ($(OPENSSL_PREFIX),)
+CFLAGS += -I$(OPENSSL_PREFIX)/include
+LDFLAGS += -L$(OPENSSL_PREFIX)/lib
+endif
+endif
+
 # ─── Main binary ─────────────────────────────────────────────────────────────
 
 SRCS = object.c tree.c index.c commit.c pes.c
