@@ -331,3 +331,4 @@ int object_read(const ObjectID *id, ObjectType *type_out, void **data_out, size_
 }
 // Phase 1 Commit 1: Initialized object storage module
 // Phase 1 Commit 2: Added notes on hashing logic
+// Phase 1 Commit 3: Clarified object write flow
