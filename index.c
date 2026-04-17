@@ -137,6 +137,25 @@ static int compare_index_entries_by_path(const void *a, const void *b) {
     return strcmp(ea->path, eb->path);
 }
 
+static int parse_index_line(const char *line, IndexEntry *entry) {
+    char hash_hex[HASH_HEX_SIZE + 1];
+    unsigned long long mtime_sec;
+    unsigned int size;
+
+    int scanned = sscanf(line, "%o %64s %llu %u %511[^\n]",
+                         &entry->mode,
+                         hash_hex,
+                         &mtime_sec,
+                         &size,
+                         entry->path);
+    if (scanned != 5 || hex_to_hash(hash_hex, &entry->hash) != 0) return -1;
+
+    entry->mtime_sec = (uint64_t)mtime_sec;
+    entry->size = size;
+    entry->path[strcspn(entry->path, "\r")] = '\0';
+    return 0;
+}
+
 // Load the index from .pes/index.
 //
 // HINTS - Useful functions:
@@ -168,24 +187,10 @@ int index_load(Index *index) {
         }
 
         IndexEntry *entry = &index->entries[index->count];
-        char hash_hex[HASH_HEX_SIZE + 1];
-        unsigned long long mtime_sec;
-        unsigned int size;
-
-        int scanned = sscanf(line, "%o %64s %llu %u %511[^\n]",
-                             &entry->mode,
-                             hash_hex,
-                             &mtime_sec,
-                             &size,
-                             entry->path);
-        if (scanned != 5 || hex_to_hash(hash_hex, &entry->hash) != 0) {
+        if (parse_index_line(line, entry) != 0) {
             fclose(f);
             return -1;
         }
-
-        entry->mtime_sec = (uint64_t)mtime_sec;
-        entry->size = size;
-        entry->path[strcspn(entry->path, "\r")] = '\0';
         index->count++;
     }
 
