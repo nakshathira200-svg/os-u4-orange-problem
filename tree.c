@@ -184,6 +184,23 @@ static int add_tree_entry(Tree *tree, uint32_t mode, const ObjectID *hash, const
     return 0;
 }
 
+static int subtree_entry_count(const IndexEntry *entries, int count,
+                               const char *prefix, const char *dir_name, size_t dir_len) {
+    size_t prefix_len = strlen(prefix);
+    int matched = 0;
+
+    while (matched < count) {
+        const char *path = entries[matched].path;
+        if (strncmp(path, prefix, prefix_len) != 0) break;
+
+        const char *rest = path + prefix_len;
+        if (strncmp(rest, dir_name, dir_len) != 0 || rest[dir_len] != '/') break;
+        matched++;
+    }
+
+    return matched;
+}
+
 static int write_tree_level(const IndexEntry *entries, int count, const char *prefix, ObjectID *id_out) {
     Tree tree;
     tree.count = 0;
@@ -212,28 +229,20 @@ static int write_tree_level(const IndexEntry *entries, int count, const char *pr
         memcpy(dir_name, rest, dir_len);
         dir_name[dir_len] = '\0';
 
-        int j = i + 1;
-        while (j < count) {
-            const char *next_path = entries[j].path;
-            if (strncmp(next_path, prefix, prefix_len) != 0) break;
-
-            const char *next_rest = next_path + prefix_len;
-            if (strncmp(next_rest, dir_name, dir_len) != 0 || next_rest[dir_len] != '/')
-                break;
-            j++;
-        }
+        int child_count = subtree_entry_count(&entries[i], count - i, prefix, dir_name, dir_len);
+        if (child_count <= 0) return -1;
 
         if (snprintf(child_prefix, sizeof(child_prefix), "%s%s/", prefix, dir_name) >= (int)sizeof(child_prefix))
             return -1;
 
         ObjectID child_id;
-        if (write_tree_level(&entries[i], j - i, child_prefix, &child_id) != 0)
+        if (write_tree_level(&entries[i], child_count, child_prefix, &child_id) != 0)
             return -1;
 
         if (add_tree_entry(&tree, MODE_DIR, &child_id, dir_name) != 0)
             return -1;
 
-        i = j;
+        i += child_count;
     }
 
     if (tree.count == 0) {
