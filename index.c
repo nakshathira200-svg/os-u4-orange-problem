@@ -28,6 +28,16 @@
 
 int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out);
 
+static int should_skip_status_entry(const char *name) {
+    if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0) return 1;
+    if (strcmp(name, ".pes") == 0) return 1;
+    if (strcmp(name, "pes") == 0) return 1;
+    if (strncmp(name, "test_", 5) == 0) return 1;
+    if (strstr(name, ".o") != NULL) return 1;
+    if (strstr(name, ".dSYM") != NULL) return 1;
+    return 0;
+}
+
 // ─── PROVIDED ────────────────────────────────────────────────────────────────
 
 // Find an index entry by path (linear scan).
@@ -97,11 +107,7 @@ int index_status(const Index *index) {
     if (dir) {
         struct dirent *ent;
         while ((ent = readdir(dir)) != NULL) {
-            // Skip hidden directories, parent directories, and build artifacts
-            if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) continue;
-            if (strcmp(ent->d_name, ".pes") == 0) continue;
-            if (strcmp(ent->d_name, "pes") == 0) continue; // compiled executable
-            if (strstr(ent->d_name, ".o") != NULL) continue; // object files
+            if (should_skip_status_entry(ent->d_name)) continue;
 
             // Check if file is tracked in the index
             int is_tracked = 0;
