@@ -25,6 +25,10 @@
 
 int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out);
 
+static int is_valid_tree_name(const char *name) {
+    return name && name[0] != '\0' && strchr(name, '/') == NULL;
+}
+
 // ─── PROVIDED ───────────────────────────────────────────────────────────────
 
 // Determine the object mode for a filesystem path.
@@ -68,6 +72,7 @@ int tree_parse(const void *data, size_t len, Tree *tree_out) {
         if (name_len >= sizeof(entry->name)) return -1;
         memcpy(entry->name, ptr, name_len);
         entry->name[name_len] = '\0'; // Ensure null-terminated
+        if (!is_valid_tree_name(entry->name)) return -1;
 
         ptr = null_byte + 1; // Skip null byte
 
@@ -153,7 +158,9 @@ static int load_index_for_tree(Index *index) {
 }
 
 static int add_tree_entry(Tree *tree, uint32_t mode, const ObjectID *hash, const char *name) {
-    if (tree->count >= MAX_TREE_ENTRIES || strlen(name) >= sizeof(tree->entries[0].name))
+    if (tree->count >= MAX_TREE_ENTRIES ||
+        !is_valid_tree_name(name) ||
+        strlen(name) >= sizeof(tree->entries[0].name))
         return -1;
 
     TreeEntry *entry = &tree->entries[tree->count++];
