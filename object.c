@@ -106,6 +106,31 @@ static int write_all(int fd, const void *buf, size_t len) {
     return 0;
 }
 
+static int build_object_buffer(ObjectType type, const void *data, size_t len,
+                               unsigned char **object_out, size_t *total_len_out) {
+    const char *type_name = object_type_name(type);
+    if (!type_name || !object_out || !total_len_out) return -1;
+
+    int header_len = snprintf(NULL, 0, "%s %zu", type_name, len);
+    if (header_len < 0) return -1;
+
+    size_t total_len = (size_t)header_len + 1 + len;
+    unsigned char *object = malloc(total_len);
+    if (!object) return -1;
+
+    if (snprintf((char *)object, (size_t)header_len + 1, "%s %zu", type_name, len) != header_len) {
+        free(object);
+        return -1;
+    }
+
+    object[header_len] = '\0';
+    if (len > 0) memcpy(object + header_len + 1, data, len);
+
+    *object_out = object;
+    *total_len_out = total_len;
+    return 0;
+}
+
 // ─── TODO: Implement these ──────────────────────────────────────────────────
 
 // Write an object to the store.
@@ -142,19 +167,9 @@ static int write_all(int fd, const void *buf, size_t len) {
 int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out) {
     if ((!data && len > 0) || !id_out) return -1;
 
-    const char *type_name = object_type_name(type);
-    if (!type_name) return -1;
-
-    int header_len = snprintf(NULL, 0, "%s %zu", type_name, len);
-    if (header_len < 0) return -1;
-
-    size_t total_len = (size_t)header_len + 1 + len;
-    unsigned char *object = malloc(total_len);
-    if (!object) return -1;
-
-    snprintf((char *)object, (size_t)header_len + 1, "%s %zu", type_name, len);
-    object[header_len] = '\0';
-    if (len > 0) memcpy(object + header_len + 1, data, len);
+    unsigned char *object = NULL;
+    size_t total_len = 0;
+    if (build_object_buffer(type, data, len, &object, &total_len) != 0) return -1;
 
     compute_hash(object, total_len, id_out);
 
