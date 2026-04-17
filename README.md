@@ -46,7 +46,15 @@ This project implements a simplified version control system inspired by Git. It 
 ## Phase 4: Commits and History
 
 <img width="637" height="389" alt="Screenshot 2026-04-17 at 8 45 24 PM" src="https://github.com/user-attachments/assets/67d1dac4-999d-41a8-a3bf-78eeb605a024" />
-*(Paste screenshot here)*
+
+Phase 4 adds commit objects on top of the staged tree snapshot. Each commit stores:
+
+* the root tree hash for the snapshot
+* the parent commit hash when history already exists
+* author and committer metadata with a timestamp
+* the user-supplied commit message
+
+`pes log` then walks the parent chain from `HEAD`, while `.pes/HEAD` continues to point at `refs/heads/main` so commits advance the branch reference atomically.
 
 ### Screenshot 4B: Object Store Growth
 
