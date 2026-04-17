@@ -61,6 +61,11 @@ static void object_shard_path(const ObjectID *id, char *path_out, size_t path_si
     snprintf(path_out, path_size, "%s/%.2s", OBJECTS_DIR, hex);
 }
 
+static void cleanup_temp_file(int fd, const char *path) {
+    if (fd >= 0) close(fd);
+    if (path) unlink(path);
+}
+
 int object_exists(const ObjectID *id) {
     char path[512];
     object_path(id, path, sizeof(path));
@@ -204,20 +209,19 @@ int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out
     }
 
     if (write_all(fd, object, total_len) < 0 || fsync(fd) < 0) {
-        close(fd);
-        unlink(temp_template);
+        cleanup_temp_file(fd, temp_template);
         free(object);
         return -1;
     }
 
     if (close(fd) < 0) {
-        unlink(temp_template);
+        cleanup_temp_file(-1, temp_template);
         free(object);
         return -1;
     }
 
     if (rename(temp_template, final_path) < 0) {
-        unlink(temp_template);
+        cleanup_temp_file(-1, temp_template);
         free(object);
         return -1;
     }
